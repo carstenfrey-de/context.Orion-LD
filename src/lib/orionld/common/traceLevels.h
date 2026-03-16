@@ -254,10 +254,6 @@ typedef enum OrionldTraceLevels
   KtPerformance             = 3122,
   KtPrometheus              = 3123,
 
-  // Kafka
-  StKafka                   = 2100,
-  StKafkaDetail             = 2101,
-
   // FT Client
   StDump                    = 3151,
   StDdsDump                 = 3152

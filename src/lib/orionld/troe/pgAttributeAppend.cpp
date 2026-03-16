@@ -22,8 +22,6 @@
 *
 * Author: Ken Zangelin
 */
-#include <stdlib.h>                                             // malloc, free
-
 extern "C"
 {
 #include "ktrace/kTrace.h"                                     // KT_*
@@ -46,33 +44,6 @@ extern "C"
 #include "orionld/troe/kjGeoPolygonExtract.h"                  // kjGeoPolygonExtract
 #include "orionld/troe/kjGeoMultiPolygonExtract.h"             // kjGeoMultiPolygonExtract
 #include "orionld/troe/pgAttributeAppend.h"                    // Own interface
-
-
-
-// -----------------------------------------------------------------------------
-//
-// pgBufAlloc - allocate a buffer, trying kaAlloc first, then malloc
-//
-// Returns NULL on failure (caller must handle)
-//
-static char* pgBufAlloc(int size, bool* needsFree)
-{
-  *needsFree = false;
-
-  char* buf = kaAlloc(&orionldState.kalloc, size);
-  if (buf != NULL)
-    return buf;
-
-  buf = (char*) malloc(size);
-  if (buf != NULL)
-  {
-    *needsFree = true;
-    return buf;
-  }
-
-  KT_E("pgBufAlloc: out of memory allocating %d bytes", size);
-  return NULL;
-}
 
 
 
@@ -120,10 +91,10 @@ void pgAttributeAppend
   KjNode*          valueNodeP
 )
 {
+  char        localBuf[2 * 1024];
+  int         bufSize = sizeof(localBuf);
+  char*       buf     = localBuf;
   const char* comma   = (attributesBufferP->values != 0)? "," : "";
-  char*       buf     = NULL;
-  int         bufSize = 0;
-  bool        bufNeedsFree = false;
 
   observedAt = (observedAt == NULL)? (char*) "null" : pgQuotedString(observedAt);
   unitCode   = (unitCode   == NULL)? (char*) "null" : pgQuotedString(unitCode);
@@ -135,30 +106,13 @@ void pgAttributeAppend
 
   const char* hasSubProperties = (subProperties == true)? "true" : "false";
 
-  //
-  // Calculate needed buffer size based on fixed parts of the SQL VALUES row.
-  // The fixed overhead includes: column placeholders, quotes, commas, parentheses, null keywords, etc.
-  // We add 512 bytes for this overhead plus the lengths of the known string parameters.
-  //
-  int fixedLen = strlen(instanceId) + strlen(attributeName) + strlen(entityId)
-               + strlen(observedAt) + strlen(unitCode) + strlen(datasetId)
-               + strlen(orionldState.requestTimeString) + 512;
-
   if (strcmp(opMode, "Delete") == 0)
   {
-    bufSize = fixedLen;
-    buf = pgBufAlloc(bufSize, &bufNeedsFree);
-    if (buf == NULL) return;
-
     snprintf(buf, bufSize, "%s('%s', '%s', 'Delete', '%s', null, null, null, '%s', null, null, null, null, null, null, null, null, null, null, null, null, '%s')",
              comma, instanceId, attributeName, entityId, datasetId, orionldState.requestTimeString);
   }
   else if (type == NULL)
   {
-    bufSize = fixedLen;
-    buf = pgBufAlloc(bufSize, &bufNeedsFree);
-    if (buf == NULL) return;
-
     snprintf(buf, bufSize, "%s('%s', '%s', 'Update', '%s', null, null, null, '%s', null, null, null, null, null, null, null, null, null, null, null, null, '%s')",
              comma, instanceId, attributeName, entityId, datasetId, orionldState.requestTimeString);
   }
@@ -166,10 +120,6 @@ void pgAttributeAppend
   {
     if (valueNodeP->type == KjString)
     {
-      bufSize = fixedLen + strlen(valueNodeP->value.s);
-      buf = pgBufAlloc(bufSize, &bufNeedsFree);
-      if (buf == NULL) return;
-
       snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', 'Relationship', '%s', null, null, null, null, null, null, null, null, null, null, '%s')",
                comma, instanceId, attributeName, opMode, entityId, observedAt, hasSubProperties, unitCode, datasetId, valueNodeP->value.s, orionldState.requestTimeString);
     }
@@ -178,17 +128,7 @@ void pgAttributeAppend
       int    renderedValueSize = kjFastRenderSize(valueNodeP);
       char*  renderedValue     = kaAlloc(&orionldState.kalloc, renderedValueSize);
 
-      if (renderedValue == NULL)
-      {
-        KT_E("pgAttributeAppend: out of memory rendering Relationship array (%d bytes)", renderedValueSize);
-        return;
-      }
-
       kjFastRender(valueNodeP, renderedValue);
-
-      bufSize = fixedLen + renderedValueSize;
-      buf = pgBufAlloc(bufSize, &bufNeedsFree);
-      if (buf == NULL) return;
 
       snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', 'Relationship', null, null, null, null, '%s', null, null, null, null, null, null, '%s')",
                comma, instanceId, attributeName, opMode, entityId, observedAt, hasSubProperties, unitCode, datasetId, renderedValue, orionldState.requestTimeString);
@@ -200,31 +140,33 @@ void pgAttributeAppend
   {
     KjNode*      geoTypeNodeP     = kjLookup(valueNodeP, "type");
     KjNode*      coordinatesNodeP = kjLookup(valueNodeP, "coordinates");
-
-    if (geoTypeNodeP == NULL || coordinatesNodeP == NULL)
-    {
-      KT_E("pgAttributeAppend: GeoProperty missing 'type' or 'coordinates'");
-      return;
-    }
-
     const char*  geoType          = geoTypeNodeP->value.s;
     bool         point            = (strcmp(geoType, "Point") == 0);
     char*        coordsString     = NULL;
     int          coordsStringLen  = 0;
-    bool         coordsNeedsFree  = false;
 
     if (point == false)
     {
-      // Allocate generously for coordinates - 64KB should handle most cases,
-      // and the geo extract functions check bounds and return false if exceeded
-      coordsStringLen = 64 * 1024;
-      coordsString = pgBufAlloc(coordsStringLen, &coordsNeedsFree);
+      coordsString = (char*) malloc(10 * 1024);
       if (coordsString == NULL)
       {
-        KT_E("pgAttributeAppend: out of memory for geo coords (%d bytes)", coordsStringLen);
+        KT_E("error allocating 10k for geo property coordinates");
         return;
       }
-      coordsString[0] = 0;
+      coordsStringLen = 10 * 1024;
+
+      buf = (char*) malloc(11 * 1024);
+      if (buf == NULL)
+      {
+        KT_E("error allocating 10k for geo property buffer");
+        free(coordsString);
+        return;
+      }
+      bufSize = 11 * 1024;
+
+      // Free the two allocated buffers afterwards
+      orionldStateDelayedFreeEnqueue(coordsString);
+      orionldStateDelayedFreeEnqueue(buf);
     }
 
     if (point == true)
@@ -235,107 +177,62 @@ void pgAttributeAppend
 
       kjGeoPointExtract(coordinatesNodeP, &longitude, &latitude, &altitude);
 
-      bufSize = fixedLen + 256;  // ample room for 3 doubles
-      buf = pgBufAlloc(bufSize, &bufNeedsFree);
-      if (buf == NULL) return;
-
       snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', 'GeoPoint', null, null, null, null, null, ST_GeomFromText('POINT(%f %f %f)'), null, null, null, null, null, '%s')",
                comma, instanceId, attributeName, opMode, entityId, observedAt, hasSubProperties, unitCode, datasetId, longitude, latitude, altitude, orionldState.requestTimeString);
     }
     else if (strcmp(geoType, "MultiPoint") == 0)
     {
-      if (kjGeoMultiPointExtract(coordinatesNodeP, coordsString, coordsStringLen) == false)
-      {
-        KT_E("pgAttributeAppend: kjGeoMultiPointExtract failed (coords too large?)");
-        if (coordsNeedsFree) free(coordsString);
-        return;
-      }
-
-      bufSize = fixedLen + strlen(coordsString) + 128;
-      buf = pgBufAlloc(bufSize, &bufNeedsFree);
-      if (buf == NULL) { if (coordsNeedsFree) free(coordsString); return; }
+      kjGeoMultiPointExtract(coordinatesNodeP, coordsString, coordsStringLen);
 
       snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', 'GeoMultiPoint', null, null, null, null, null, null, ST_GeomFromText('MULTIPOINT(%s)', 4326), null, null, null, null, '%s')",
                comma, instanceId, attributeName, opMode, entityId, observedAt, hasSubProperties, unitCode, datasetId, coordsString, orionldState.requestTimeString);
     }
     else if (strcmp(geoType, "LineString") == 0)
     {
-      if (kjGeoLineStringExtract(coordinatesNodeP, coordsString, coordsStringLen) == false)
-      {
-        KT_E("pgAttributeAppend: kjGeoLineStringExtract failed (coords too large?)");
-        if (coordsNeedsFree) free(coordsString);
-        return;
-      }
-
-      bufSize = fixedLen + strlen(coordsString) + 128;
-      buf = pgBufAlloc(bufSize, &bufNeedsFree);
-      if (buf == NULL) { if (coordsNeedsFree) free(coordsString); return; }
+      kjGeoLineStringExtract(coordinatesNodeP, coordsString, coordsStringLen);
 
       snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', 'GeoLineString', null, null, null, null, null, null, null, null, null, ST_GeomFromText('LINESTRING(%s)', 4326), null, '%s')",
                comma, instanceId, attributeName, opMode, entityId, observedAt, hasSubProperties, unitCode, datasetId, coordsString, orionldState.requestTimeString);
     }
     else if (strcmp(geoType, "MultiLineString") == 0)
     {
-      if (kjGeoMultiLineStringExtract(coordinatesNodeP, coordsString, coordsStringLen) == false)
-      {
-        KT_E("pgAttributeAppend: kjGeoMultiLineStringExtract failed (coords too large?)");
-        if (coordsNeedsFree) free(coordsString);
-        return;
-      }
-
-      bufSize = fixedLen + strlen(coordsString) + 128;
-      buf = pgBufAlloc(bufSize, &bufNeedsFree);
-      if (buf == NULL) { if (coordsNeedsFree) free(coordsString); return; }
+      kjGeoMultiLineStringExtract(coordinatesNodeP, coordsString, coordsStringLen);
 
       snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', 'GeoMultiLineString', null, null, null, null, null, null, null, null, null, null, ST_GeomFromText('MULTILINESTRING(%s)', 4326), '%s')",
                comma, instanceId, attributeName, opMode, entityId, observedAt, hasSubProperties, unitCode, datasetId, coordsString, orionldState.requestTimeString);
     }
     else if (strcmp(geoType, "Polygon") == 0)
     {
-      if (kjGeoPolygonExtract(coordinatesNodeP, coordsString, coordsStringLen) == false)
-      {
-        KT_E("pgAttributeAppend: kjGeoPolygonExtract failed (coords too large?)");
-        if (coordsNeedsFree) free(coordsString);
-        return;
-      }
-
-      bufSize = fixedLen + strlen(coordsString) + 128;
-      buf = pgBufAlloc(bufSize, &bufNeedsFree);
-      if (buf == NULL) { if (coordsNeedsFree) free(coordsString); return; }
-
+      kjGeoPolygonExtract(coordinatesNodeP, coordsString, coordsStringLen);
       snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', 'GeoPolygon', null, null, null, null, null, null, null, ST_GeomFromText('POLYGON(%s)'), null, null, null, '%s')",
                comma, instanceId, attributeName, opMode, entityId, observedAt, hasSubProperties, unitCode, datasetId, coordsString, orionldState.requestTimeString);
     }
     else if (strcmp(geoType, "MultiPolygon") == 0)
     {
-      if (kjGeoMultiPolygonExtract(coordinatesNodeP, coordsString, coordsStringLen) == false)
-      {
-        KT_E("pgAttributeAppend: kjGeoMultiPolygonExtract failed (coords too large?)");
-        if (coordsNeedsFree) free(coordsString);
-        return;
-      }
-
-      bufSize = fixedLen + strlen(coordsString) + 128;
-      buf = pgBufAlloc(bufSize, &bufNeedsFree);
-      if (buf == NULL) { if (coordsNeedsFree) free(coordsString); return; }
-
+      kjGeoMultiPolygonExtract(coordinatesNodeP, coordsString, coordsStringLen);
       snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', 'GeoMultiPolygon', null, null, null, null, null, null, null, null, ST_GeomFromText('MULTIPOLYGON(%s)', 4326), null, null, '%s')",
                comma, instanceId, attributeName, opMode, entityId, observedAt, hasSubProperties, unitCode, datasetId, coordsString, orionldState.requestTimeString);
     }
-
-    // Free coords buffer if it was malloc'd (not for kaAlloc'd or point case)
-    if (coordsNeedsFree && coordsString != NULL)
-      free(coordsString);
   }
   else  // Property OR JsonProperty
   {
     if (valueNodeP->type == KjString)
     {
-      int neededSize = fixedLen + strlen(valueNodeP->value.s);
+      long neededSize = strlen(attributeName) + strlen(valueNodeP->value.s) + 512;  // + 512 for the rest of the string
 
-      buf = pgBufAlloc(neededSize, &bufNeedsFree);
-      if (buf == NULL) return;
-      bufSize = neededSize;
+      // try to write into buf, if not enough space, allocate a new buffer
+      if (neededSize >= bufSize)
+      {
+        buf = kaAlloc(&orionldState.kalloc, neededSize);
+        bufSize = neededSize;
+      }
+
+      if (buf == NULL)
+      {
+        buf = (char*) malloc(neededSize + 1024);
+        bufSize = neededSize + 1024 - 1;
+        orionldStateDelayedFreeEnqueue(buf);
+      }
 
       snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', 'String', '%s', null, null, null, null, null, null, null, null, null, null, '%s')",
                comma, instanceId, attributeName, opMode, entityId, observedAt, hasSubProperties, unitCode, datasetId, valueNodeP->value.s, orionldState.requestTimeString);
@@ -344,28 +241,16 @@ void pgAttributeAppend
     {
       const char* value = (valueNodeP->value.b == true)? "true" : "false";
 
-      bufSize = fixedLen;
-      buf = pgBufAlloc(bufSize, &bufNeedsFree);
-      if (buf == NULL) return;
-
       snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', 'Boolean', null, %s, null, null, null, null, null, null, null, null, null, '%s')",
                comma, instanceId, attributeName, opMode, entityId, observedAt, hasSubProperties, unitCode, datasetId, value, orionldState.requestTimeString);
     }
     else if (valueNodeP->type == KjInt)
     {
-      bufSize = fixedLen + 32;  // room for int64
-      buf = pgBufAlloc(bufSize, &bufNeedsFree);
-      if (buf == NULL) return;
-
       snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', 'Number', null, null, %lld, null, null, null, null, null, null, null, null, '%s')",
                comma, instanceId, attributeName, opMode, entityId, observedAt, hasSubProperties, unitCode, datasetId, valueNodeP->value.i, orionldState.requestTimeString);
     }
     else if (valueNodeP->type == KjFloat)
     {
-      bufSize = fixedLen + 32;  // room for double
-      buf = pgBufAlloc(bufSize, &bufNeedsFree);
-      if (buf == NULL) return;
-
       snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', 'Number', null, null, %f, null, null, null, null, null, null, null, null, '%s')",
                comma, instanceId, attributeName, opMode, entityId, observedAt, hasSubProperties, unitCode, datasetId, valueNodeP->value.f, orionldState.requestTimeString);
     }
@@ -377,26 +262,18 @@ void pgAttributeAppend
         return;
       }
 
-      int   renderedValueSize = kjFastRenderSize(valueNodeP);
-      char* renderedValue     = kaAlloc(&orionldState.kalloc, renderedValueSize);
+      // WARNING: If an attribute is HUGE, it may not have room enough in a buffer allocated by kaAlloc (there's a max-size)
+      int          renderedValueSize   = kjFastRenderSize(valueNodeP);
+      char*        renderedValue       = kaAlloc(&orionldState.kalloc, renderedValueSize);
 
+      // if kaAlloc returns null-pointer, the attribute is too big -> do not try to write to null-pointer, report error and return
       if (renderedValue == NULL)
       {
-        // kaAlloc failed - try malloc as fallback
-        renderedValue = (char*) malloc(renderedValueSize);
-        if (renderedValue == NULL)
-        {
-          KT_E("pgAttributeAppend: out of memory rendering compound value (%d bytes)", renderedValueSize);
-          return;
-        }
-        orionldStateDelayedFreeEnqueue(renderedValue);
+        KT_E("error allocating %d bytes for attribute value", renderedValueSize);
+        return;
       }
 
       kjFastRender(valueNodeP, renderedValue);
-
-      bufSize = fixedLen + renderedValueSize;
-      buf = pgBufAlloc(bufSize, &bufNeedsFree);
-      if (buf == NULL) return;
 
       snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', 'Compound', null, null, null, null, '%s', null, null, null, null, null, null, '%s')",
                comma, instanceId, attributeName, opMode, entityId, observedAt, hasSubProperties, unitCode, datasetId, renderedValue, orionldState.requestTimeString);
@@ -406,13 +283,9 @@ void pgAttributeAppend
   if ((buf == NULL) || (buf[0] == 0))
   {
     KT_W("TROE: too big attribute value? (nothing written to history DB)");
-    if (bufNeedsFree && buf != NULL) free(buf);
     return;
   }
 
   pgAppend(attributesBufferP, buf, 0);
   attributesBufferP->values += 1;
-
-  if (bufNeedsFree)
-    free(buf);
 }
