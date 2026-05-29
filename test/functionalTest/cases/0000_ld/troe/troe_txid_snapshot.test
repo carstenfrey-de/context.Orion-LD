@@ -1,0 +1,159 @@
+# Copyright 2026 FIWARE Foundation e.V.
+#
+# This file is part of Orion-LD Context Broker.
+#
+# Orion-LD Context Broker is free software: you can redistribute it and/or
+# modify it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# Orion-LD Context Broker is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+# General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with Orion-LD Context Broker. If not, see http://www.gnu.org/licenses/.
+#
+# For those usages not covered by this license please contact with
+# orionld at fiware dot org
+
+# VALGRIND_READY - to mark the test ready for valgrindTestSuite.sh
+
+--NAME--
+TRoE write snapshot identifier (txId) groups all attributes of a single write
+
+--SHELL-INIT--
+export BROKER=orionld
+dbInit CB
+pgInit $CB_DB_NAME
+brokerStart CB 0 IPv4 -troe -experimental
+
+--SHELL--
+
+#
+# 01. Create entity E1 in a single write: OriginSource, temperature (with sub-attribute), status
+# 02. Create entity E2 in a separate write: OriginSource (different value), pressure
+# 03. All attributes of the E1 write share exactly one txId
+# 04. entities, attributes and subAttributes of the E1 write all share the same txId
+# 05. The two separate writes produced two different txId values
+# 06. txId carries the urn:ngsi-ld:tx: prefix
+# 07. Use case: all attributes written together with OriginSource = OPC_Server_MuFit_03
+#
+
+echo "01. Create entity E1 in a single write"
+echo "======================================"
+payload='{
+  "id": "urn:ngsi-ld:entities:E1",
+  "type": "T",
+  "OriginSource": "OPC_Server_MuFit_03",
+  "temperature": { "type": "Property", "value": 23.5, "accuracy": { "type": "Property", "value": 0.5 } },
+  "status": "running"
+}'
+orionCurl --url /ngsi-ld/v1/entities --payload "$payload"
+echo
+echo
+
+
+echo "02. Create entity E2 in a separate write"
+echo "========================================"
+payload='{
+  "id": "urn:ngsi-ld:entities:E2",
+  "type": "T",
+  "OriginSource": "OPC_Server_Other_99",
+  "pressure": 1013
+}'
+orionCurl --url /ngsi-ld/v1/entities --payload "$payload"
+echo
+echo
+
+
+echo "03. All attributes of the E1 write share exactly one txId"
+echo "========================================================="
+postgresCmd -sql "SELECT count(DISTINCT txId) AS distinct_txid FROM attributes WHERE entityId = 'urn:ngsi-ld:entities:E1'"
+echo
+echo
+
+
+echo "04. entities, attributes and subAttributes of the E1 write all share the same txId"
+echo "=================================================================================="
+postgresCmd -sql "SELECT count(DISTINCT txId) AS snapshot_keys FROM (SELECT txId FROM entities WHERE id = 'urn:ngsi-ld:entities:E1' UNION ALL SELECT txId FROM attributes WHERE entityId = 'urn:ngsi-ld:entities:E1' UNION ALL SELECT txId FROM subAttributes WHERE entityId = 'urn:ngsi-ld:entities:E1') u"
+echo
+echo
+
+
+echo "05. The two separate writes produced two different txId values"
+echo "============================================================="
+postgresCmd -sql "SELECT count(DISTINCT txId) AS distinct_txid FROM attributes"
+echo
+echo
+
+
+echo "06. txId carries the urn:ngsi-ld:tx: prefix"
+echo "==========================================="
+postgresCmd -sql "SELECT DISTINCT substring(txId from 1 for 15) AS prefix FROM attributes WHERE entityId = 'urn:ngsi-ld:entities:E1'"
+echo
+echo
+
+
+echo "07. Use case: all attributes written together with OriginSource = OPC_Server_MuFit_03"
+echo "====================================================================================="
+postgresCmd -sql "SELECT id FROM attributes WHERE txId IN (SELECT txId FROM attributes WHERE id = 'https://uri.etsi.org/ngsi-ld/default-context/OriginSource' AND text = 'OPC_Server_MuFit_03') ORDER BY id COLLATE \"C\""
+echo
+echo
+
+
+--REGEXPECT--
+01. Create entity E1 in a single write
+======================================
+HTTP/1.1 201 Created
+Content-Length: 0
+Date: REGEX(.*)
+Location: /ngsi-ld/v1/entities/urn:ngsi-ld:entities:E1
+
+
+
+02. Create entity E2 in a separate write
+========================================
+HTTP/1.1 201 Created
+Content-Length: 0
+Date: REGEX(.*)
+Location: /ngsi-ld/v1/entities/urn:ngsi-ld:entities:E2
+
+
+
+03. All attributes of the E1 write share exactly one txId
+=========================================================
+distinct_txid
+1
+
+
+04. entities, attributes and subAttributes of the E1 write all share the same txId
+==================================================================================
+snapshot_keys
+1
+
+
+05. The two separate writes produced two different txId values
+=============================================================
+distinct_txid
+2
+
+
+06. txId carries the urn:ngsi-ld:tx: prefix
+===========================================
+prefix
+urn:ngsi-ld:tx:
+
+
+07. Use case: all attributes written together with OriginSource = OPC_Server_MuFit_03
+=====================================================================================
+id
+https://uri.etsi.org/ngsi-ld/default-context/OriginSource
+https://uri.etsi.org/ngsi-ld/default-context/status
+https://uri.etsi.org/ngsi-ld/default-context/temperature
+
+
+--TEARDOWN--
+brokerStop CB
+dbDrop CB
