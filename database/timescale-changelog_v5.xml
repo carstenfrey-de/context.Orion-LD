@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
+
+    <changeSet author="frey.carsten@gmail.com" id="v5_step_1">
+        <comment>Add common transaction/snapshot id (txId) shared by all rows of a single write. Existing rows keep txId NULL.</comment>
+        <addColumn schemaName="public" tableName="entities">
+            <column name="txId" type="TEXT"/>
+        </addColumn>
+        <addColumn schemaName="public" tableName="attributes">
+            <column name="txId" type="TEXT"/>
+        </addColumn>
+        <addColumn schemaName="public" tableName="subAttributes">
+            <column name="txId" type="TEXT"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="frey.carsten@gmail.com" id="v5_step_2">
+        <comment>Index to group attributes by write snapshot (txId).</comment>
+        <createIndex schemaName="public" indexName="attributes_txid_index" tableName="attributes">
+            <column name="txId"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

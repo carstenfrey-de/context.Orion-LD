@@ -71,6 +71,38 @@ The native temporal query reconstructs temporal entity representations from the 
 
 All value types are supported: String, Number, Boolean, Relationship, DateTime, Compound, GeoProperty (all geo types), and LanguageMap.
 
+## Write Snapshot Identifier (txId)
+
+Each of the three TRoE tables (`entities`, `attributes`, `subAttributes`) has a `txId` column that
+carries a common transaction/snapshot identifier. A single UUID is generated once per write request
+(`urn:ngsi-ld:tx:<uuid>`) and written into **every** row produced by that request.
+
+This provides a guaranteed-unique key linking all attributes of one "entity snapshot" (a single write
+operation) - something the other columns cannot do reliably:
+
+| Column | Scope | Suitable as snapshot key? |
+| --- | --- | --- |
+| `instanceId` | unique per attribute instance | no - differs for every attribute |
+| `observedAt` | business timestamp from the payload | no - often NULL, not unique |
+| `ts` | request time (shared within a request) | no - not guaranteed unique across requests |
+| `txId` | one UUID per write request | **yes** |
+
+Rows written before this feature was introduced have `txId = NULL` (no backfill).
+
+### Example: attributes written together with a given attribute value
+
+To retrieve all attributes that were written in the same operation as `OriginSource = OPC_Server_MuFit_03`:
+
+```sql
+SELECT a.*
+FROM   attributes a
+WHERE  a.txId IN (
+         SELECT txId FROM attributes
+         WHERE  id = '<expanded OriginSource attribute name>'  -- TRoE stores 'id' expanded; '.' is replaced by '='
+         AND    text = 'OPC_Server_MuFit_03'
+       );
+```
+
 ## Mintaka Compatibility
 
 [Mintaka](https://github.com/FIWARE/Mintaka) can still be used as an external temporal query handler on (default) port 8080. Note that Mintaka supports the NGSI-LD API up to version 1.3.1 and does not implement aggregation (which was introduced in API version 1.6.1). For aggregation support, use the native temporal query endpoints described above.

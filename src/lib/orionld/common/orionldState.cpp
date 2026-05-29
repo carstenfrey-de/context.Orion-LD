@@ -43,6 +43,7 @@ extern "C"
 #include "orionld/db/dbConfiguration.h"                          // DB_DRIVER_MONGOC
 #include "orionld/context/orionldCoreContext.h"                  // orionldCoreContext, ORIONLD_CORE_CONTEXT_URL_V*
 #include "orionld/common/numberToDate.h"                         // numberToDate
+#include "orionld/common/uuidGenerate.h"                         // uuidGenerate
 #include "orionld/common/performance.h"                          // REQUEST_PERFORMANCE
 #include "orionld/common/orionldState.h"                         // Own interface
 
@@ -168,6 +169,16 @@ void orionldStateInit(MHD_Connection* connection)
   orionldState.requestTime             = orionldState.timestamp.tv_sec + ((double) orionldState.timestamp.tv_nsec) / 1000000000;
 
   numberToDate(orionldState.requestTime, orionldState.requestTimeString, sizeof(orionldState.requestTimeString));
+
+  //
+  // Generate a single transaction/snapshot id for this request, shared by every TRoE row
+  // (entities, attributes, subAttributes) written while serving the request. This gives a
+  // guaranteed-unique common key linking all attributes of one write operation - something
+  // neither instanceId (unique per attribute), observedAt nor ts (not guaranteed unique) provide.
+  // Only generated when TRoE is enabled, to avoid the cost on read requests.
+  //
+  if (troe)
+    uuidGenerate(orionldState.troeTxId, sizeof(orionldState.troeTxId), "urn:ngsi-ld:tx:");
 
   orionldState.kjsonP                  = kjBufferCreate(&orionldState.kjson, &orionldState.kalloc);
   orionldState.requestNo               = requestNo;

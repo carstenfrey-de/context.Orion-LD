@@ -124,7 +124,7 @@ void pgSubAttributeAppend
   int fixedLen = strlen(instanceId) + strlen(subAttributeName) + strlen(entityId)
                + strlen(attrInstanceId) + strlen(attrDatasetId)
                + strlen(observedAt) + strlen(unitCode)
-               + strlen(orionldState.requestTimeString) + 512;
+               + strlen(orionldState.requestTimeString) + strlen(orionldState.troeTxId) + 512;
 
   if (type == NULL)
   {
@@ -132,8 +132,8 @@ void pgSubAttributeAppend
     buf = pgBufAllocSub(bufSize);
     if (buf == NULL) return;
 
-    snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, 'UnchangedType', '%s', null, null, null, null, null, null, null, null, null, null, '%s')",
-             comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, object, orionldState.requestTimeString);
+    snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, 'UnchangedType', '%s', null, null, null, null, null, null, null, null, null, null, '%s', '%s')",
+             comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, object, orionldState.requestTimeString, orionldState.troeTxId);
   }
   else if (strcmp(type, "Relationship") == 0)
   {
@@ -141,8 +141,8 @@ void pgSubAttributeAppend
     buf = pgBufAllocSub(bufSize);
     if (buf == NULL) return;
 
-    snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, 'Relationship', '%s', null, null, null, null, null, null, null, null, null, null, '%s')",
-             comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, object, orionldState.requestTimeString);
+    snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, 'Relationship', '%s', null, null, null, null, null, null, null, null, null, null, '%s', '%s')",
+             comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, object, orionldState.requestTimeString, orionldState.troeTxId);
   }
   else if (strcmp(type, "GeoProperty") == 0)
   {
@@ -169,8 +169,8 @@ void pgSubAttributeAppend
       buf = pgBufAllocSub(bufSize);
       if (buf == NULL) return;
 
-      snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, 'GeoPoint', null, null, null, null, null, ST_GeomFromText('POINT(%f %f %f)', 4326), null, null, null, null, null, '%s')",
-               comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, longitude, latitude, altitude, orionldState.requestTimeString);
+      snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, 'GeoPoint', null, null, null, null, null, ST_GeomFromText('POINT(%f %f %f)', 4326), null, null, null, null, null, '%s', '%s')",
+               comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, longitude, latitude, altitude, orionldState.requestTimeString, orionldState.troeTxId);
     }
     else
     {
@@ -237,28 +237,28 @@ void pgSubAttributeAppend
       //
       if (strcmp(geoType, "MultiPoint") == 0)
       {
-        snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', null, null, null, null, null, null, ST_GeomFromText('%s(%s)', 4326), null, null, null, null, '%s')",
-                 comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, geoTypeName, stPrefix, coordsString, orionldState.requestTimeString);
+        snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', null, null, null, null, null, null, ST_GeomFromText('%s(%s)', 4326), null, null, null, null, '%s', '%s')",
+                 comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, geoTypeName, stPrefix, coordsString, orionldState.requestTimeString, orionldState.troeTxId);
       }
       else if (strcmp(geoType, "LineString") == 0)
       {
-        snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', null, null, null, null, null, null, null, null, null, ST_GeomFromText('%s(%s)', 4326), null, '%s')",
-                 comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, geoTypeName, stPrefix, coordsString, orionldState.requestTimeString);
+        snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', null, null, null, null, null, null, null, null, null, ST_GeomFromText('%s(%s)', 4326), null, '%s', '%s')",
+                 comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, geoTypeName, stPrefix, coordsString, orionldState.requestTimeString, orionldState.troeTxId);
       }
       else if (strcmp(geoType, "MultiLineString") == 0)
       {
-        snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', null, null, null, null, null, null, null, null, null, null, ST_GeomFromText('%s(%s)', 4326), '%s')",
-                 comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, geoTypeName, stPrefix, coordsString, orionldState.requestTimeString);
+        snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', null, null, null, null, null, null, null, null, null, null, ST_GeomFromText('%s(%s)', 4326), '%s', '%s')",
+                 comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, geoTypeName, stPrefix, coordsString, orionldState.requestTimeString, orionldState.troeTxId);
       }
       else if (strcmp(geoType, "Polygon") == 0)
       {
-        snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', null, null, null, null, null, null, null, ST_GeomFromText('%s(%s)', 4326), null, null, null, '%s')",
-                 comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, geoTypeName, stPrefix, coordsString, orionldState.requestTimeString);
+        snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', null, null, null, null, null, null, null, ST_GeomFromText('%s(%s)', 4326), null, null, null, '%s', '%s')",
+                 comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, geoTypeName, stPrefix, coordsString, orionldState.requestTimeString, orionldState.troeTxId);
       }
       else if (strcmp(geoType, "MultiPolygon") == 0)
       {
-        snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', null, null, null, null, null, null, null, null, ST_GeomFromText('%s(%s)', 4326), null, null, '%s')",
-                 comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, geoTypeName, stPrefix, coordsString, orionldState.requestTimeString);
+        snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, '%s', null, null, null, null, null, null, null, null, ST_GeomFromText('%s(%s)', 4326), null, null, '%s', '%s')",
+                 comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, geoTypeName, stPrefix, coordsString, orionldState.requestTimeString, orionldState.troeTxId);
       }
 
     }
@@ -271,8 +271,8 @@ void pgSubAttributeAppend
       buf = pgBufAllocSub(bufSize);
       if (buf == NULL) return;
 
-      snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, 'String', '%s', null, null, null, null, null, null, null, null, null, null, '%s')",
-               comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, valueNodeP->value.s, orionldState.requestTimeString);
+      snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, 'String', '%s', null, null, null, null, null, null, null, null, null, null, '%s', '%s')",
+               comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, valueNodeP->value.s, orionldState.requestTimeString, orionldState.troeTxId);
     }
     else if (valueNodeP->type == KjBoolean)
     {
@@ -282,8 +282,8 @@ void pgSubAttributeAppend
       buf = pgBufAllocSub(bufSize);
       if (buf == NULL) return;
 
-      snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, 'Boolean', null, %s, null, null, null, null, null, null, null, null, null, '%s')",
-               comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, value, orionldState.requestTimeString);
+      snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, 'Boolean', null, %s, null, null, null, null, null, null, null, null, null, '%s', '%s')",
+               comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, value, orionldState.requestTimeString, orionldState.troeTxId);
     }
     else if (valueNodeP->type == KjInt)
     {
@@ -291,8 +291,8 @@ void pgSubAttributeAppend
       buf = pgBufAllocSub(bufSize);
       if (buf == NULL) return;
 
-      snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, 'Number', null, null, %lld, null, null, null, null, null, null, null, null, '%s')",
-               comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, valueNodeP->value.i, orionldState.requestTimeString);
+      snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, 'Number', null, null, %lld, null, null, null, null, null, null, null, null, '%s', '%s')",
+               comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, valueNodeP->value.i, orionldState.requestTimeString, orionldState.troeTxId);
     }
     else if (valueNodeP->type == KjFloat)
     {
@@ -300,8 +300,8 @@ void pgSubAttributeAppend
       buf = pgBufAllocSub(bufSize);
       if (buf == NULL) return;
 
-      snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, 'Number', null, null, %f, null, null, null, null, null, null, null, null, '%s')",
-               comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, valueNodeP->value.f, orionldState.requestTimeString);
+      snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, 'Number', null, null, %f, null, null, null, null, null, null, null, null, '%s', '%s')",
+               comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, valueNodeP->value.f, orionldState.requestTimeString, orionldState.troeTxId);
     }
     else if ((valueNodeP->type == KjArray) || (valueNodeP->type == KjObject))
     {
@@ -322,8 +322,8 @@ void pgSubAttributeAppend
       buf = pgBufAllocSub(bufSize);
       if (buf == NULL) return;
 
-      snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, 'Compound', null, null, null, null, '%s', null, null, null, null, null, null, '%s')",
-               comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, renderedValue, orionldState.requestTimeString);
+      snprintf(buf, bufSize, "%s('%s', '%s', '%s', '%s', %s, %s, %s, 'Compound', null, null, null, null, '%s', null, null, null, null, null, null, '%s', '%s')",
+               comma, instanceId, subAttributeName, entityId, attrInstanceId, attrDatasetId, observedAt, unitCode, renderedValue, orionldState.requestTimeString, orionldState.troeTxId);
     }
   }
 

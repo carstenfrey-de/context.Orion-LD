@@ -359,6 +359,7 @@ typedef struct OrionldConnectionState
   struct timespec         timestamp;                 // The time when the request entered
   double                  requestTime;               // Same same (timestamp), but at a floating point
   char                    requestTimeString[64];     // ISO8601 representation of 'requestTime'
+  char                    troeTxId[80];              // Common transaction/snapshot id for all TRoE rows written by this request
   int                     httpStatusCode;
   Kjson                   kjson;
   Kjson*                  kjsonP;
