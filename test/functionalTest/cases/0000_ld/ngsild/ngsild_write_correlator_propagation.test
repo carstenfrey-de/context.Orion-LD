@@ -1,0 +1,109 @@
+# Copyright 2026 FIWARE Foundation e.V.
+#
+# This file is part of Orion-LD Context Broker.
+#
+# Orion-LD Context Broker is free software: you can redistribute it and/or
+# modify it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# Orion-LD Context Broker is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+# General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with Orion-LD Context Broker. If not, see http://www.gnu.org/licenses/.
+#
+# For those usages not covered by this license please contact with
+# orionld at fiware dot org
+
+# VALGRIND_READY - to mark the test ready for valgrindTestSuite.sh
+
+--NAME--
+Write correlator (NGSILD-Correlator) is propagated on outgoing notifications (loop-detection foundation)
+
+--SHELL-INIT--
+dbInit CB
+orionldStart CB -experimental -subCacheIval 1
+accumulatorStart --pretty-print
+
+--SHELL--
+
+#
+# The write correlator is propagated as an outgoing 'NGSILD-Correlator' header on notifications,
+# so a downstream broker can detect notification loops by comparing it with the stored correlator.
+#
+# 01. Create a subscription S1 on type T, notifying the accumulator
+# 02. Create entity E1 (type T) with header NGSILD-Correlator: urn:opc:write:propagate
+# 03. The notification carries 'NGSILD-Correlator: urn:opc:write:propagate'
+#
+
+echo "01. Create a subscription S1 on type T, notifying the accumulator"
+echo "================================================================"
+payload='{
+  "id": "urn:ngsi-ld:Subscription:S1",
+  "type": "Subscription",
+  "entities": [ { "type": "T" } ],
+  "notification": {
+    "endpoint": { "uri": "http://localhost:'$LISTENER_PORT'/notify" }
+  }
+}'
+orionCurl --url /ngsi-ld/v1/subscriptions --payload "$payload"
+echo
+echo
+
+# Give the subscription cache time to pick up S1
+sleep 1
+
+
+echo "02. Create entity E1 (type T) with NGSILD-Correlator: urn:opc:write:propagate"
+echo "============================================================================"
+payload='{
+  "id": "urn:ngsi-ld:entities:E1",
+  "type": "T",
+  "temperature": { "type": "Property", "value": 23.5 }
+}'
+orionCurl --url /ngsi-ld/v1/entities --payload "$payload" -H "NGSILD-Correlator: urn:opc:write:propagate"
+echo
+echo
+
+# Give the notification time to arrive at the accumulator
+sleep 1
+
+
+echo "03. The notification carries NGSILD-Correlator: urn:opc:write:propagate"
+echo "======================================================================"
+accumulatorDump | grep -i "NGSILD-Correlator"
+echo
+echo
+
+
+--REGEXPECT--
+01. Create a subscription S1 on type T, notifying the accumulator
+================================================================
+HTTP/1.1 201 Created
+Content-Length: 0
+Date: REGEX(.*)
+Location: /ngsi-ld/v1/subscriptions/urn:ngsi-ld:Subscription:S1
+
+
+
+02. Create entity E1 (type T) with NGSILD-Correlator: urn:opc:write:propagate
+============================================================================
+HTTP/1.1 201 Created
+Content-Length: 0
+Date: REGEX(.*)
+Location: /ngsi-ld/v1/entities/urn:ngsi-ld:entities:E1
+
+
+
+03. The notification carries NGSILD-Correlator: urn:opc:write:propagate
+======================================================================
+NGSILD-Correlator: urn:opc:write:propagate
+
+
+--TEARDOWN--
+brokerStop CB
+accumulatorStop
+dbDrop CB

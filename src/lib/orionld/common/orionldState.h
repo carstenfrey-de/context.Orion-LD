@@ -539,6 +539,7 @@ typedef struct OrionldConnectionState
   // Correlator (from "NGSILD-Correlator" header, falling back to "Fiware-Correlator")
   char* correlator;
   char* correlatorResolvedP;   // Lazily resolved correlator (root, generated if absent) - see correlatorGet()
+  bool  correlatorLoop;        // Set when a notification loop is detected (see correlatorLoopDetected) - suppresses outgoing notifications
 
   // Previous Values
   KjNode* previousValues;

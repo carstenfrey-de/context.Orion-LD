@@ -47,6 +47,7 @@ extern "C"
 #include "orionld/dbModel/dbModelToApiEntity.h"                  // dbModelToApiEntity
 #include "orionld/mongoc/mongocEntityLookup.h"                   // mongocEntityLookup
 #include "orionld/mongoc/mongocAttributesAdd.h"                  // mongocAttributesAdd
+#include "orionld/common/correlatorLoopDetected.h"               // correlatorLoopDetected
 #include "orionld/notifications/alteration.h"                    // alteration
 #include "orionld/notifications/previousValues.h"                // previousValues
 #include "orionld/notifications/sysAttrsStrip.h"                 // sysAttrsStrip
@@ -173,6 +174,10 @@ bool orionldPostEntity(void)
   }
   else
     KT_T(KtSR, "The entity '%s' was found in the local DB", entityId);
+
+  // Notification loop detection - the write still happens, but outgoing notifications get suppressed (see rest.cpp)
+  if (correlatorLoopDetected(dbEntityP) == true)
+    orionldState.correlatorLoop = true;
 
   // Keep untouched initial state of the entity in the database - for alterations (to check for false updates)
   KjNode* initialDbEntityP = NULL;  // kjClone(orionldState.kjsonP, dbEntityP);

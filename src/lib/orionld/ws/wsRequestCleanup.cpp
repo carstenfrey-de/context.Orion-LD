@@ -59,9 +59,11 @@ extern "C"
 void wsRequestCleanup(void)
 {
   // 1. Process any notification alterations
+  //    A detected notification loop still applies the write, but its outgoing notifications are suppressed to break the loop.
   if (orionldState.alterations != NULL)
   {
-    orionldAlterationsTreat(orionldState.alterations);
+    if (orionldState.correlatorLoop == false)
+      orionldAlterationsTreat(orionldState.alterations);
     orionldState.alterations = NULL;  // Prevent MHD's requestCompleted from reprocessing freed data
   }
 

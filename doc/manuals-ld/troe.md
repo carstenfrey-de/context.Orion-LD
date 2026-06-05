@@ -108,6 +108,16 @@ WHERE  a.correlator = (
        );
 ```
 
+### Notification loop detection
+
+The write correlator also serves as a notification-loop guard. On every outgoing notification the
+broker propagates the correlator of the triggering write as an `NGSILD-Correlator` header. If a
+custom notification (`Ngsiv2-AttrsFormat: custom`) comes back and triggers a write whose correlator
+equals the correlator already stored on the entity (`lastCorrelator`), a loop is detected.
+
+When a loop is detected the write is still applied, but the **outgoing notifications for that write
+are suppressed**, breaking the loop. This mirrors the behaviour of the legacy code path.
+
 ## Mintaka Compatibility
 
 [Mintaka](https://github.com/FIWARE/Mintaka) can still be used as an external temporal query handler on (default) port 8080. Note that Mintaka supports the NGSI-LD API up to version 1.3.1 and does not implement aggregation (which was introduced in API version 1.6.1). For aggregation support, use the native temporal query endpoints described above.

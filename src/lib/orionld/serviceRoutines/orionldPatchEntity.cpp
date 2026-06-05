@@ -54,6 +54,7 @@ extern "C"
 #include "orionld/context/orionldContextItemExpand.h"            // orionldContextItemExpand
 #include "orionld/context/orionldAttributeExpand.h"              // orionldAttributeExpand
 #include "orionld/mongoc/mongocEntityLookup.h"                   // mongocEntityLookup
+#include "orionld/common/correlatorLoopDetected.h"               // correlatorLoopDetected
 #include "orionld/mongoc/mongocAttributesAdd.h"                  // mongocAttributesAdd
 #include "orionld/distOp/distOpRequests.h"                       // distOpRequests
 #include "orionld/distOp/distOpListRelease.h"                    // distOpListRelease
@@ -270,6 +271,10 @@ bool orionldPatchEntity(void)
     orionldError(OrionldResourceNotFound, "Entity does not exist", entityId, 404);
     return false;
   }
+
+  // Notification loop detection - the write still happens, but outgoing notifications get suppressed (see rest.cpp)
+  if (correlatorLoopDetected(dbEntityP) == true)
+    orionldState.correlatorLoop = true;
 
   //
   // If entity type is present in the payload body, it must be a String and identical to the entity type in the database.

@@ -50,6 +50,7 @@ extern "C"
 #include "orionld/common/traceLevels.h"                          // KTrace levels
 #include "orionld/common/numberToDate.h"                         // numberToDate
 #include "orionld/common/uuidGenerate.h"                         // uuidGenerate
+#include "orionld/common/correlatorGet.h"                        // correlatorGet
 #include "orionld/common/eqForDot.h"                             // eqForDot
 #include "orionld/common/langStringExtract.h"                    // langStringExtract
 #include "orionld/kjTree/kjEntityIdLookupInEntityArray.h"        // kjEntityIdLookupInEntityArray
@@ -937,6 +938,20 @@ int notificationSend(OrionldAlterationMatch* mAltP, double timestamp, CURL** cur
     char* buf = kaAlloc(&orionldState.kalloc, len);
 
     ioVec[headerIx].iov_len  = snprintf(buf, len, "Authorization: %s\r\n", orionldState.in.authorization);
+    ioVec[headerIx].iov_base = buf;
+    ++headerIx;
+  }
+
+  //
+  // NGSILD-Correlator
+  // Propagate the write correlator of the triggering request so that a downstream broker can
+  // detect notification loops (it compares this correlator with the entity's stored 'lastCorrelator').
+  //
+  {
+    int   len = strlen(correlatorGet()) + 24;  // "NGSILD-Correlator: " + value + "\r\n0"
+    char* buf = kaAlloc(&orionldState.kalloc, len);
+
+    ioVec[headerIx].iov_len  = snprintf(buf, len, "NGSILD-Correlator: %s\r\n", correlatorGet());
     ioVec[headerIx].iov_base = buf;
     ++headerIx;
   }

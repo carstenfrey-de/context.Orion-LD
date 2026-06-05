@@ -30,6 +30,7 @@ SET (SOURCES
     orionldState.cpp
     uuidGenerate.cpp
     correlatorGet.cpp
+    correlatorLoopDetected.cpp
     orionldServerConnect.cpp
     dotForEq.cpp
     eqForDot.cpp

@@ -385,12 +385,18 @@ void requestCompleted
 
   //
   // Notifications
+  // A detected notification loop still applies the write, but its outgoing notifications are suppressed to break the loop.
   //
   if (orionldState.alterations != NULL)
   {
-    PERFORMANCE(notifStart);
-    orionldAlterationsTreat(orionldState.alterations);
-    PERFORMANCE(notifEnd);
+    if (orionldState.correlatorLoop == true)
+      KT_W("Notification loop detected (correlator already seen on the entity) - skipping outgoing notifications");
+    else
+    {
+      PERFORMANCE(notifStart);
+      orionldAlterationsTreat(orionldState.alterations);
+      PERFORMANCE(notifEnd);
+    }
   }
 
   //
