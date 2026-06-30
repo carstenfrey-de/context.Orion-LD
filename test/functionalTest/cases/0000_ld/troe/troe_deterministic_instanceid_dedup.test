@@ -1,0 +1,179 @@
+# Copyright 2026 FIWARE Foundation e.V.
+#
+# This file is part of Orion-LD Context Broker.
+#
+# Orion-LD Context Broker is free software: you can redistribute it and/or
+# modify it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# Orion-LD Context Broker is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+# General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with Orion-LD Context Broker. If not, see http://www.gnu.org/licenses/.
+#
+# For those usages not covered by this license please contact with
+# orionld at fiware dot org
+
+# VALGRIND_READY - to mark the test ready for valgrindTestSuite.sh
+
+--NAME--
+TRoE/idempotent temporal ingestion - deterministic instanceId deduplicates re-sent observations
+
+--SHELL-INIT--
+export BROKER=orionld
+dbInit CB
+pgInit $CB_DB_NAME
+brokerStart CB 0 IPv4 -troe -experimental
+
+--SHELL--
+
+#
+# 01. Create M1 with temperature (value 23.5, observedAt T0) -> one temporal instance
+# 02. Re-send the SAME observation (same value, same observedAt T0) via upsert ?options=update
+# 03. TRoE: still exactly ONE temperature instance - the re-send was deduplicated
+# 04. Re-send a third time
+# 05. TRoE: still ONE instance
+# 06. Send temperature with a DIFFERENT observedAt T1 (a genuinely new observation)
+# 07. TRoE: now TWO temperature instances - a different observedAt is NOT deduplicated
+# 08. Each instance has a deterministic instanceId (urn:ngsi-ld:attribute:instance:), one per observedAt
+#
+
+echo "01. Create M1 with temperature (observedAt T0)"
+echo "=============================================="
+payload='{
+  "id": "urn:ngsi-ld:entities:M1",
+  "type": "Sensor",
+  "temperature": { "type": "Property", "value": 23.5, "observedAt": "2024-01-01T00:00:00.000Z" }
+}'
+orionCurl --url /ngsi-ld/v1/entities --payload "$payload"
+echo
+echo
+
+
+echo "02. Re-send the SAME observation (identical value and observedAt T0)"
+echo "==================================================================="
+payload='[{
+  "id": "urn:ngsi-ld:entities:M1",
+  "type": "Sensor",
+  "temperature": { "type": "Property", "value": 23.5, "observedAt": "2024-01-01T00:00:00.000Z" }
+}]'
+orionCurl --url /ngsi-ld/v1/entityOperations/upsert?options=update --payload "$payload"
+echo
+echo
+
+
+echo "03. TRoE: still exactly ONE temperature instance (re-send deduplicated)"
+echo "======================================================================"
+postgresCmd -sql "SELECT count(*) AS temperature_instances FROM attributes WHERE entityId = 'urn:ngsi-ld:entities:M1' AND id = 'https://uri.etsi.org/ngsi-ld/default-context/temperature'"
+echo
+echo
+
+
+echo "04. Re-send a third time"
+echo "========================"
+orionCurl --url /ngsi-ld/v1/entityOperations/upsert?options=update --payload "$payload"
+echo
+echo
+
+
+echo "05. TRoE: still ONE instance"
+echo "============================"
+postgresCmd -sql "SELECT count(*) AS temperature_instances FROM attributes WHERE entityId = 'urn:ngsi-ld:entities:M1' AND id = 'https://uri.etsi.org/ngsi-ld/default-context/temperature'"
+echo
+echo
+
+
+echo "06. Send temperature with a DIFFERENT observedAt T1 (new observation)"
+echo "===================================================================="
+payload='[{
+  "id": "urn:ngsi-ld:entities:M1",
+  "type": "Sensor",
+  "temperature": { "type": "Property", "value": 24.0, "observedAt": "2024-01-01T00:05:00.000Z" }
+}]'
+orionCurl --url /ngsi-ld/v1/entityOperations/upsert?options=update --payload "$payload"
+echo
+echo
+
+
+echo "07. TRoE: now TWO temperature instances (different observedAt is not deduplicated)"
+echo "================================================================================="
+postgresCmd -sql "SELECT count(*) AS temperature_instances FROM attributes WHERE entityId = 'urn:ngsi-ld:entities:M1' AND id = 'https://uri.etsi.org/ngsi-ld/default-context/temperature'"
+echo
+echo
+
+
+echo "08. Deterministic instanceId: prefix + one distinct id per observedAt"
+echo "====================================================================="
+postgresCmd -sql "SELECT count(*) AS rows, count(DISTINCT instanceId) AS distinct_instanceids, count(DISTINCT substring(instanceId from 1 for 31)) AS distinct_prefixes FROM attributes WHERE entityId = 'urn:ngsi-ld:entities:M1' AND id = 'https://uri.etsi.org/ngsi-ld/default-context/temperature'"
+echo
+postgresCmd -sql "SELECT DISTINCT substring(instanceId from 1 for 31) AS prefix FROM attributes WHERE entityId = 'urn:ngsi-ld:entities:M1'"
+echo
+echo
+
+
+--REGEXPECT--
+01. Create M1 with temperature (observedAt T0)
+==============================================
+HTTP/1.1 201 Created
+Content-Length: 0
+Date: REGEX(.*)
+Location: /ngsi-ld/v1/entities/urn:ngsi-ld:entities:M1
+
+
+
+02. Re-send the SAME observation (identical value and observedAt T0)
+===================================================================
+HTTP/1.1 204 No Content
+Date: REGEX(.*)
+
+
+
+03. TRoE: still exactly ONE temperature instance (re-send deduplicated)
+======================================================================
+temperature_instances
+1
+
+
+04. Re-send a third time
+========================
+HTTP/1.1 204 No Content
+Date: REGEX(.*)
+
+
+
+05. TRoE: still ONE instance
+============================
+temperature_instances
+1
+
+
+06. Send temperature with a DIFFERENT observedAt T1 (new observation)
+====================================================================
+HTTP/1.1 204 No Content
+Date: REGEX(.*)
+
+
+
+07. TRoE: now TWO temperature instances (different observedAt is not deduplicated)
+=================================================================================
+temperature_instances
+2
+
+
+08. Deterministic instanceId: prefix + one distinct id per observedAt
+=====================================================================
+rows,distinct_instanceids,distinct_prefixes
+2,2,1
+
+prefix
+urn:ngsi-ld:attribute:instance:
+
+
+--TEARDOWN--
+brokerStop CB
+dbDrop CB
+pgDrop $CB_DB_NAME
