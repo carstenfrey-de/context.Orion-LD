@@ -80,3 +80,4 @@ CREATE TABLE IF NOT EXISTS subAttributes (
 
 CREATE INDEX subattributes_attributeid_index ON subAttributes (attrInstanceId,attrDatasetId);
 CREATE INDEX attributes_correlator_index ON attributes (correlator);
+CREATE UNIQUE INDEX attributes_dedup_index ON attributes (entityId, id, datasetId, observedAt) WHERE observedAt IS NOT NULL;

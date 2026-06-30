@@ -221,6 +221,7 @@ bool troePatchEntity2(void)
   char* sqlV[2];
   int   sqlIx = 0;
 
+  pgAppendOnConflictDoNothing(&attributesBuffer);  // idempotent temporal write - skip duplicate instances
   if (attributesBuffer.values    > 0) sqlV[sqlIx++] = attributesBuffer.buf;
   if (subAttributesBuffer.values > 0) sqlV[sqlIx++] = subAttributesBuffer.buf;
 

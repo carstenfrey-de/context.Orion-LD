@@ -35,4 +35,12 @@
 //
 extern void pgAppend(PgAppendBuffer* pgBufP, const char* tail, int tailLen);
 
+
+
+// ----------------------------------------------------------------------------
+//
+// pgAppendOnConflictDoNothing - append " ON CONFLICT DO NOTHING" to an attribute INSERT buffer
+//
+extern void pgAppendOnConflictDoNothing(PgAppendBuffer* pgBufP);
+
 #endif  // SRC_LIB_ORIONLD_TROE_PGAPPEND_H_

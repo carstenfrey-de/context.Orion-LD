@@ -80,6 +80,32 @@ static const PgMigrationStep pgMigrationSteps[] =
     "ALTER TABLE attributes    ADD COLUMN IF NOT EXISTS correlator TEXT;"
     "ALTER TABLE subAttributes ADD COLUMN IF NOT EXISTS correlator TEXT;"
     "CREATE INDEX IF NOT EXISTS attributes_correlator_index ON attributes (correlator);"
+  },
+  {
+    3,
+    "deduplicate temporal attribute instances + unique index on (entityId, id, datasetId, observedAt)",
+    //
+    // Existing duplicates (created before instanceId was deterministic) must be removed first - the
+    // unique index below cannot be built while they exist. The DELETE keeps one row per business key
+    // (the one with the highest ctid). Rows with a NULL observedAt are never duplicates here (NULL =
+    // NULL is not TRUE) and are excluded from the index, so they are left untouched.
+    //
+    // NOTE: on a large TRoE table this DELETE plus the (non-concurrent, hence locking) index build
+    // can be heavy and slow. That is exactly why the whole migration is gated behind the explicit
+    // -migrate option, to be run in a maintenance window. (A future enhancement could build the
+    // index with CREATE INDEX CONCURRENTLY, which would require running this step outside a
+    // transaction - not supported by the current step model.)
+    //
+    "DELETE FROM attributes a USING attributes b "
+    " WHERE a.ctid       < b.ctid "
+    "   AND a.entityId   = b.entityId "
+    "   AND a.id         = b.id "
+    "   AND a.datasetId  = b.datasetId "
+    "   AND a.observedAt = b.observedAt "
+    "   AND a.observedAt IS NOT NULL;"
+    "CREATE UNIQUE INDEX IF NOT EXISTS attributes_dedup_index "
+    " ON attributes (entityId, id, datasetId, observedAt) "
+    " WHERE observedAt IS NOT NULL;"
   }
 };
 
@@ -142,10 +168,20 @@ bool pgSchemaExists(PGconn* connectionP)
 //
 static int pgSchemaProbeVersion(PGconn* connectionP)
 {
+  // v3 marker: the dedup unique index on attributes
+  PGresult* res = PQexec(connectionP, "SELECT 1 FROM pg_indexes WHERE indexname = 'attributes_dedup_index'");
+
+  bool dedupIndexPresent = (res != NULL) && (PQresultStatus(res) == PGRES_TUPLES_OK) && (PQntuples(res) > 0);
+  if (res != NULL)
+    PQclear(res);
+
+  if (dedupIndexPresent)
+    return 3;
+
   // v2 marker: the write 'correlator' column on all three TRoE tables
-  PGresult* res = PQexec(connectionP,
-                         "SELECT count(*) FROM information_schema.columns "
-                         "WHERE column_name = 'correlator' AND table_name IN ('entities', 'attributes', 'subattributes')");
+  res = PQexec(connectionP,
+               "SELECT count(*) FROM information_schema.columns "
+               "WHERE column_name = 'correlator' AND table_name IN ('entities', 'attributes', 'subattributes')");
 
   int correlatorColumns = 0;
   if ((res != NULL) && (PQresultStatus(res) == PGRES_TUPLES_OK) && (PQntuples(res) > 0))

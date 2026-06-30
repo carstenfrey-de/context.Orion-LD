@@ -124,3 +124,21 @@ void pgAppend(PgAppendBuffer* pgBufP, const char* tail, int tailLen)
   pgBufP->currentIx += tailLen;
   pgBufP->buf[pgBufP->currentIx] = 0;
 }
+
+
+
+// ----------------------------------------------------------------------------
+//
+// pgAppendOnConflictDoNothing - terminate a TRoE attribute INSERT with idempotent-write semantics
+//
+// Appends " ON CONFLICT DO NOTHING" to the INSERT buffer (only when it actually carries rows), so
+// a duplicate temporal instance - same deterministic instanceId / same business key - is silently
+// skipped instead of failing the whole multi-row INSERT with a unique-violation. Without it, one
+// already-present row would abort the entire batch transaction (and, on the Kafka ingest path,
+// wedge the partition through endless redelivery of the poison batch).
+//
+void pgAppendOnConflictDoNothing(PgAppendBuffer* pgBufP)
+{
+  if (pgBufP->values > 0)
+    pgAppend(pgBufP, " ON CONFLICT DO NOTHING", 0);
+}

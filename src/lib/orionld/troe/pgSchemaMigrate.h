@@ -36,7 +36,7 @@
 // Bump this and add a matching step to 'pgMigrationSteps' (in pgSchemaMigrate.cpp)
 // whenever the TRoE PostgreSQL layout changes.
 //
-#define PG_SCHEMA_VERSION 2
+#define PG_SCHEMA_VERSION 3
 
 
 

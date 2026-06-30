@@ -85,6 +85,7 @@ bool troePostBatchCreate(void)
   int   sqlIx = 0;
 
   if (entities.values      > 0) sqlV[sqlIx++] = entities.buf;
+  pgAppendOnConflictDoNothing(&attributes);  // idempotent temporal write - skip duplicate instances
   if (attributes.values    > 0) sqlV[sqlIx++] = attributes.buf;
   if (subAttributes.values > 0) sqlV[sqlIx++] = subAttributes.buf;
 

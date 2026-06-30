@@ -34,4 +34,17 @@
 //
 extern char* uuidGenerate(char* buf, int bufSize, const char* prefix);
 
+
+
+// ----------------------------------------------------------------------------
+//
+// uuidV5Generate - deterministic, name-based UUID (RFC 4122 version 5, SHA-1)
+//
+// Unlike uuidGenerate (random/time-based), this produces the SAME UUID every time for the
+// same 'name'. Used to derive a reproducible TRoE attribute instanceId from the business key
+// (entityId|attribute|datasetId|observedAt), so that re-sending the same observation yields the
+// same instanceId - the basis for idempotent temporal ingestion.
+//
+extern char* uuidV5Generate(char* buf, int bufSize, const char* prefix, const char* name, int nameLen);
+
 #endif  // SRC_LIB_ORIONLD_COMMON_UUIDGENERATE_H_

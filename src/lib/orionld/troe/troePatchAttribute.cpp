@@ -79,6 +79,7 @@ bool troePatchAttribute(void)
   char* sqlV[2];
   int   sqlIx = 0;
 
+  pgAppendOnConflictDoNothing(&attributes);  // idempotent temporal write - skip duplicate instances
   if (attributes.values    > 0) sqlV[sqlIx++] = attributes.buf;
   if (subAttributes.values > 0) sqlV[sqlIx++] = subAttributes.buf;
 

@@ -23,6 +23,7 @@
 * Author: Ken Zangelin
 */
 #include <string.h>                                            // strlen, strcspn
+#include <stdio.h>                                             // snprintf
 
 extern "C"
 {
@@ -33,7 +34,7 @@ extern "C"
 
 #include "orionld/types/PgAppendBuffer.h"                      // PgAppendBuffer
 #include "orionld/common/orionldState.h"                       // orionldState
-#include "orionld/common/uuidGenerate.h"                       // uuidGenerate
+#include "orionld/common/uuidGenerate.h"                       // uuidGenerate, uuidV5Generate
 #include "orionld/troe/pgAttributeAppend.h"                    // pgAttributeAppend
 #include "orionld/troe/pgSubAttributeBuild.h"                  // pgSubAttributeBuild
 #include "orionld/troe/pgObservedAtExtract.h"                  // pgObservedAtExtract
@@ -128,8 +129,6 @@ bool pgAttributeBuild
   KjNode* valueNodeP    = NULL;
   KjNode* subAttrV      = kjArray(orionldState.kjsonP, NULL);
 
-  uuidGenerate(instanceId, sizeof(instanceId), "urn:ngsi-ld:attribute:instance:");
-
   // Extract attribute info, call subAttributeBuild when necessary
   KjNode* nodeP = attributeNodeP->value.firstChildP;
   KjNode* next;
@@ -182,6 +181,32 @@ bool pgAttributeBuild
     KT_W("Sorry, attributes of type '%s' are not stored in the Temporal database right now (to be implemented)", skip);
     return true;
   }
+
+  //
+  // Deterministic instanceId for idempotent temporal ingestion.
+  //
+  // Derive it (UUIDv5) from the business key (entityId | attribute | datasetId | observedAt), so
+  // re-sending the same observation yields the SAME instanceId. Together with the unique index on
+  // (entityId, id, datasetId, observedAt) and ON CONFLICT DO NOTHING this makes the temporal write
+  // idempotent (e.g. a Kafka redelivery or a client retry no longer creates a duplicate instance).
+  //
+  // A stable observedAt is required for a natural key. Without one (e.g. a delete marker, or an
+  // attribute carrying no observedAt) there is nothing to deduplicate on, so fall back to a random
+  // instanceId - the partial unique index excludes NULL observedAt, so these never conflict.
+  //
+  if (observedAt != NULL)
+  {
+    char        nameBuf[1024];
+    const char* dsId    = (datasetId != NULL)? datasetId : "None";
+    int         nameLen = snprintf(nameBuf, sizeof(nameBuf), "%s|%s|%s|%s", entityId, attributeNodeP->name, dsId, observedAt);
+
+    if ((nameLen < 0) || (nameLen > (int) sizeof(nameBuf) - 1))
+      nameLen = sizeof(nameBuf) - 1;  // snprintf truncated - hash the (still deterministic) truncated name
+
+    uuidV5Generate(instanceId, sizeof(instanceId), "urn:ngsi-ld:attribute:instance:", nameBuf, nameLen);
+  }
+  else
+    uuidGenerate(instanceId, sizeof(instanceId), "urn:ngsi-ld:attribute:instance:");
 
   pgAttributeAppend(attributesBuffer, instanceId, attributeNodeP->name, opMode, entityId, type, observedAt, subProperties, unitCode, datasetId, valueNodeP);
 
